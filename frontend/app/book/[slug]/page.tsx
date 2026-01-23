@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
+import { v4 as uuidv4 } from 'uuid';
+import { db, functions } from '@/lib/firebase';
+import { collection, query, where, getDocs, addDoc, doc, onSnapshot } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
 
 interface LocalData {
   name: string;
@@ -37,7 +39,7 @@ export default function BookingPage() {
   const [userId, setUserId] = useState<string>('');
 
   // Form state
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<string | number>(1);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedTime, setSelectedTime] = useState<string>('');
@@ -45,23 +47,28 @@ export default function BookingPage() {
   const [clientName, setClientName] = useState('');
   const [clientPhone, setClientPhone] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [appointmentDetails, setAppointmentDetails] = useState<any>(null);
+  const [queuePosition, setQueuePosition] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState('');
+
+  const calculateAvailableSlots = () => {
+    // TODO: Implement logic to calculate available slots based on selectedDate, selectedService, and availability
+    console.log('Calculating availability...');
+    // access availability, selectedDate, etc. here
+    setAvailableSlots(['09:00', '09:30', '10:00']); // Dummy data for now
+  };
 
   useEffect(() => {
+    setSessionId(uuidv4());
     loadLocalData();
   }, [publicSlug]);
 
   useEffect(() => {
     if (selectedDate && selectedService && availability.length > 0) {
       calculateAvailableSlots();
-      }, 30000);
     }
-
-    return () => {
-      if (heartbeatInterval) {
-        clearInterval(heartbeatInterval);
-      }
-    };
-  }, [queuePosition, step]);
+  }, [selectedDate, selectedService, availability]);
 
   const loadLocalData = async () => {
     try {
@@ -79,7 +86,7 @@ export default function BookingPage() {
 
       const userDoc = usersSnapshot.docs[0];
       const userData = userDoc.data();
-      setLocalData(userData);
+      setLocalData(userData as LocalData);
       setUserId(userDoc.id);
 
       // Cargar servicios activos
@@ -91,7 +98,7 @@ export default function BookingPage() {
       const servicesData = servicesSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
-      }));
+      })) as Service[];
       setServices(servicesData);
 
       setStep('queue');
@@ -141,7 +148,7 @@ export default function BookingPage() {
       const getAvailableSlots = httpsCallable(functions, 'getAvailableSlotsFunc');
       const result: any = await getAvailableSlots({
         userId,
-        serviceId: selectedService.id,
+        serviceId: selectedService?.id,
         date,
       });
       setAvailableSlots(result.data.slots);
@@ -153,7 +160,7 @@ export default function BookingPage() {
   };
 
   const selectSlot = (slot: string) => {
-    setSelectedSlot(slot);
+    setSelectedTime(slot);
     setStep('form');
   };
 
@@ -166,19 +173,19 @@ export default function BookingPage() {
       const createAppointment = httpsCallable(functions, 'createAppointmentFunc');
       const result: any = await createAppointment({
         userId,
-        serviceId: selectedService.id,
+        serviceId: selectedService?.id,
         date: selectedDate,
-        startTime: selectedSlot,
+        startTime: selectedTime,
         clientName,
         clientPhone,
         sessionId,
       });
 
       setAppointmentDetails({
-        localName: localData.localName,
-        serviceName: selectedService.name,
+        localName: localData?.name,
+        serviceName: selectedService?.name,
         date: selectedDate,
-        time: selectedSlot,
+        time: selectedTime,
       });
       setStep('success');
     } catch (err: any) {
@@ -211,7 +218,7 @@ export default function BookingPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
-          <h1 className="text-3xl font-bold mb-4">{localData?.localName}</h1>
+          <h1 className="text-3xl font-bold mb-4">{localData?.name}</h1>
           <div className="bg-white p-8 rounded-lg shadow-md">
             <p className="text-6xl font-bold text-blue-600 mb-4">{queuePosition}</p>
             <p className="text-xl">personas delante de ti</p>
@@ -228,8 +235,8 @@ export default function BookingPage() {
     return (
       <div className="min-h-screen bg-gray-50 py-12 px-4">
         <div className="max-w-2xl mx-auto">
-          <h1 className="text-3xl font-bold mb-2">{localData?.localName}</h1>
-          <p className="text-gray-600 mb-8">{localData?.localDescription}</p>
+          <h1 className="text-3xl font-bold mb-2">{localData?.name}</h1>
+          <p className="text-gray-600 mb-8">{localData?.description}</p>
 
           <h2 className="text-2xl font-bold mb-4">Selecciona un servicio</h2>
           <div className="space-y-3">
@@ -333,7 +340,7 @@ export default function BookingPage() {
               <strong>Fecha:</strong> {selectedDate}
             </p>
             <p>
-              <strong>Hora:</strong> {selectedSlot}
+              <strong>Hora:</strong> {selectedTime}
             </p>
           </div>
 
