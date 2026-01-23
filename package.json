@@ -1,0 +1,19 @@
+{
+  "name": "app-agenda",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.23",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.18"
+  },
+  "dependencies": {
+    "next": "^16.1.4",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3"
+  }
+}

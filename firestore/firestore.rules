@@ -1,0 +1,91 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      // Cualquiera puede leer campos públicos
+      allow read: if resource.data.publicSlug != null;
+      
+      // Solo el dueño puede escribir
+      allow write: if isOwner(userId);
+      
+      // Services subcollection
+      match /services/{serviceId} {
+        // Cualquiera puede leer servicios activos
+        allow read: if resource.data.isActive == true || isOwner(userId);
+        
+        // Solo el dueño puede escribir
+        allow write: if isOwner(userId);
+      }
+      
+      // Availability subcollection
+      match /availability/{dayOfWeek} {
+        // Solo el dueño puede leer y escribir
+        allow read, write: if isOwner(userId);
+      }
+      
+      // Exceptions subcollection
+      match /exceptions/{exceptionId} {
+        // Solo el dueño puede leer y escribir
+        allow read, write: if isOwner(userId);
+      }
+      
+      // Problem Clients subcollection
+      match /problemClients/{clientPhone} {
+        // Solo el dueño puede leer y escribir
+        allow read, write: if isOwner(userId);
+      }
+      
+      // History subcollection
+      match /history/{month} {
+        // Solo el dueño puede leer
+        allow read: if isOwner(userId);
+        
+        // Solo Cloud Functions pueden escribir (no se permite desde cliente)
+        allow write: if false;
+      }
+    }
+    
+    // Appointments collection
+    match /appointments/{appointmentId} {
+      // Solo el dueño puede leer sus propios turnos
+      allow read: if isOwner(resource.data.userId);
+      
+      // Solo Cloud Functions pueden escribir
+      allow write: if false;
+    }
+    
+    // Queues collection
+    match /queues/{userId} {
+      // Solo lectura del documento principal
+      allow read: if true;
+      
+      // Solo Cloud Functions pueden escribir
+      allow write: if false;
+      
+      // Clients subcollection
+      match /clients/{sessionId} {
+        // Cualquiera puede leer (para ver posición en cola)
+        allow read: if true;
+        
+        // Solo Cloud Functions pueden escribir
+        allow write: if false;
+      }
+    }
+    
+    // Denegar todo lo demás
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
