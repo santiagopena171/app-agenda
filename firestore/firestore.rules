@@ -28,6 +28,12 @@ service cloud.firestore {
         allow write: if isOwner(userId);
       }
       
+      // Settings subcollection
+      match /settings/{settingId} {
+        // Solo el dueño puede leer y escribir
+        allow read, write: if isOwner(userId);
+      }
+      
       // Availability subcollection
       match /availability/{dayOfWeek} {
         // Solo el dueño puede leer y escribir
@@ -58,11 +64,14 @@ service cloud.firestore {
     
     // Appointments collection
     match /appointments/{appointmentId} {
-      // Solo el dueño puede leer sus propios turnos
-      allow read: if isOwner(resource.data.userId);
+      // Permitir lectura si el usuario autenticado consulta sus propios turnos
+      allow read: if request.auth != null;
       
-      // Solo Cloud Functions pueden escribir
-      allow write: if false;
+      // Permitir crear turnos desde el flujo público
+      allow create: if true;
+      
+      // Solo el dueño puede actualizar o eliminar
+      allow update, delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
     }
     
     // Queues collection

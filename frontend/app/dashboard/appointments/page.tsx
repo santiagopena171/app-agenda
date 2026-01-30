@@ -3,68 +3,112 @@
 import { useEffect, useState } from 'react';
 import { auth, db } from '@/lib/firebase';
 import { collection, query, where, getDocs, orderBy, updateDoc, doc } from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
 
 interface Appointment {
   id: string;
   serviceName: string;
+  serviceDuration?: number;
   clientName: string;
   clientPhone: string;
   date: string;
-  startTime: string;
-  endTime: string;
+  time?: string;
+  startTime?: string;
+  endTime?: string;
   status: string;
   createdAt: any;
 }
 
 export default function AppointmentsPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [filter, setFilter] = useState<'all' | 'upcoming' | 'past'>('upcoming');
+  const [filter, setFilter] = useState<'all' | 'upcoming' | 'past'>('all');
   const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
   useEffect(() => {
-    loadAppointments();
+    console.log('Setting up auth listener');
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      console.log('Auth state changed:', user ? `User ${user.uid}` : 'No user');
+      setCurrentUser(user);
+      setAuthLoading(false);
+      if (user) {
+        loadAppointments(user.uid);
+      } else {
+        setLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (currentUser && !authLoading) {
+      console.log('Filter changed, reloading appointments');
+      loadAppointments(currentUser.uid);
+    }
   }, [filter]);
 
-  const loadAppointments = async () => {
-    if (!auth.currentUser) return;
-
+  const loadAppointments = async (userId: string) => {
     setLoading(true);
     try {
+      console.log('=== LOADING APPOINTMENTS ===');
+      console.log('userId:', userId);
+      console.log('filter:', filter);
       const today = new Date().toISOString().split('T')[0];
+      console.log('today:', today);
+      
       let appointmentsQuery;
 
       if (filter === 'upcoming') {
         appointmentsQuery = query(
           collection(db, 'appointments'),
-          where('userId', '==', auth.currentUser.uid),
+          where('userId', '==', userId),
           where('date', '>=', today),
-          where('status', '==', 'confirmed'),
           orderBy('date', 'asc')
         );
       } else if (filter === 'past') {
         appointmentsQuery = query(
           collection(db, 'appointments'),
-          where('userId', '==', auth.currentUser.uid),
+          where('userId', '==', userId),
           where('date', '<', today),
           orderBy('date', 'desc')
         );
       } else {
+        // Para "Todos" traer TODO sin filtro de fecha
         appointmentsQuery = query(
           collection(db, 'appointments'),
-          where('userId', '==', auth.currentUser.uid),
-          orderBy('date', 'desc')
+          where('userId', '==', userId)
         );
       }
 
+      console.log('Executing query...');
       const snapshot = await getDocs(appointmentsQuery);
-      const appointmentsData = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as Appointment[];
+      console.log('=== QUERY RESULT ===');
+      console.log('Total documents:', snapshot.size);
+      
+      let appointmentsData = snapshot.docs.map((doc) => {
+        const data = doc.data();
+        console.log('Document:', doc.id, data);
+        return {
+          id: doc.id,
+          ...data,
+        };
+      }) as Appointment[];
 
+      // Solo filtrar por status si es "upcoming"
+      if (filter === 'upcoming') {
+        const beforeFilter = appointmentsData.length;
+        appointmentsData = appointmentsData.filter(
+          apt => apt.status === 'pending' || apt.status === 'confirmed'
+        );
+        console.log(`Status filter: ${beforeFilter} -> ${appointmentsData.length}`);
+      }
+
+      console.log('Final appointments:', appointmentsData.length);
       setAppointments(appointmentsData);
     } catch (error) {
-      console.error('Error loading appointments:', error);
+      console.error('=== ERROR ===', error);
     } finally {
       setLoading(false);
     }
@@ -72,6 +116,7 @@ export default function AppointmentsPage() {
 
   const cancelAppointment = async (appointmentId: string) => {
     if (!confirm('¿Estás seguro de cancelar este turno?')) return;
+    if (!currentUser) return;
 
     try {
       await updateDoc(doc(db, 'appointments', appointmentId), {
@@ -80,7 +125,7 @@ export default function AppointmentsPage() {
         cancelledBy: 'owner',
       });
 
-      await loadAppointments();
+      await loadAppointments(currentUser.uid);
       alert('Turno cancelado correctamente');
     } catch (error) {
       console.error('Error cancelling appointment:', error);
@@ -98,8 +143,17 @@ export default function AppointmentsPage() {
     });
   };
 
+  const calculateEndTime = (startTime: string, durationMinutes: number): string => {
+    const [hours, minutes] = startTime.split(':').map(Number);
+    const totalMinutes = hours * 60 + minutes + durationMinutes;
+    const endHours = Math.floor(totalMinutes / 60);
+    const endMinutes = totalMinutes % 60;
+    return `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
+  };
+
   const getStatusBadge = (status: string) => {
     const badges: Record<string, { color: string; text: string }> = {
+      pending: { color: 'bg-yellow-100 text-yellow-800', text: 'Pendiente' },
       confirmed: { color: 'bg-green-100 text-green-800', text: 'Confirmado' },
       cancelled: { color: 'bg-red-100 text-red-800', text: 'Cancelado' },
       completed_attended: { color: 'bg-blue-100 text-blue-800', text: 'Asistió' },
@@ -114,8 +168,28 @@ export default function AppointmentsPage() {
     );
   };
 
+  if (authLoading) {
+    return (
+      <div className="p-6">
+        <h2 className="text-2xl font-bold mb-6">Turnos</h2>
+        <div>Verificando autenticación...</div>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <div className="p-6">
+        <h2 className="text-2xl font-bold mb-6">Turnos</h2>
+        <div className="bg-yellow-50 p-4 rounded-lg">
+          <p className="text-yellow-800">No hay sesión activa. Por favor inicia sesión.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div>
+    <div className="p-6">
       <h2 className="text-2xl font-bold mb-6">Turnos</h2>
 
       <div className="flex gap-2 mb-6">
@@ -170,13 +244,13 @@ export default function AppointmentsPage() {
                   
                   <div className="text-sm text-gray-600 space-y-1">
                     <p>📅 {formatDate(appointment.date)}</p>
-                    <p>🕐 {appointment.startTime} - {appointment.endTime}</p>
+                    <p>🕐 {appointment.time || appointment.startTime} {appointment.serviceDuration && appointment.time ? `- ${calculateEndTime(appointment.time, appointment.serviceDuration)}` : appointment.endTime ? `- ${appointment.endTime}` : ''}</p>
                     <p>✂️ {appointment.serviceName}</p>
                     <p>📱 {appointment.clientPhone}</p>
                   </div>
                 </div>
 
-                {appointment.status === 'confirmed' && (
+                {(appointment.status === 'confirmed' || appointment.status === 'pending') && (
                   <button
                     onClick={() => cancelAppointment(appointment.id)}
                     className="text-red-600 hover:text-red-800 text-sm font-medium"

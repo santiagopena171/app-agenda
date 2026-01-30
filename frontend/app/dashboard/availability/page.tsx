@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { auth, db } from '@/lib/firebase';
 import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
-import { Calendar, Clock, Info, Check, ChevronLeft } from 'lucide-react';
+import { Calendar, Clock, Info, Check, ChevronLeft, Plus, Trash2 } from 'lucide-react';
 
 interface Service {
   id: string;
@@ -11,9 +11,13 @@ interface Service {
   duration: number;
 }
 
-interface DateSchedule {
+interface TimeSlot {
   startTime: string;
   endTime: string;
+}
+
+interface DateSchedule {
+  timeSlots: TimeSlot[];
   slotInterval: number;
 }
 
@@ -27,11 +31,22 @@ export default function AvailabilityPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    loadData();
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      if (user) {
+        loadData();
+      } else {
+        setLoading(false);
+      }
+    });
+    
+    return () => unsubscribe();
   }, []);
 
   const loadData = async () => {
-    if (!auth.currentUser) return;
+    if (!auth.currentUser) {
+      setLoading(false);
+      return;
+    }
 
     try {
       const availDoc = await getDoc(doc(db, 'users', auth.currentUser.uid, 'settings', 'availability'));
@@ -39,7 +54,25 @@ export default function AvailabilityPage() {
         const data = availDoc.data();
         const dates = data.selectedDates || [];
         setSelectedDates(new Set(dates));
-        setDateSchedules(data.dateSchedules || {});
+        
+        // Migrar datos antiguos si es necesario
+        const schedules = data.dateSchedules || {};
+        const migratedSchedules: Record<string, DateSchedule> = {};
+        
+        Object.keys(schedules).forEach(key => {
+          const schedule = schedules[key];
+          if (schedule.startTime && schedule.endTime && !schedule.timeSlots) {
+            // Formato antiguo, migrar
+            migratedSchedules[key] = {
+              timeSlots: [{ startTime: schedule.startTime, endTime: schedule.endTime }],
+              slotInterval: schedule.slotInterval || 30
+            };
+          } else {
+            migratedSchedules[key] = schedule;
+          }
+        });
+        
+        setDateSchedules(migratedSchedules);
       }
 
       const servicesSnap = await getDocs(collection(db, 'users', auth.currentUser.uid, 'services'));
@@ -61,6 +94,17 @@ export default function AvailabilityPage() {
 
     setSaving(true);
     try {
+      // Validar que todos los horarios tengan datos válidos
+      const isValid = Object.entries(dateSchedules).every(([_, schedule]) => {
+        return schedule.timeSlots.every(slot => slot.startTime && slot.endTime);
+      });
+
+      if (!isValid) {
+        alert('Por favor completa todos los horarios antes de guardar');
+        setSaving(false);
+        return;
+      }
+
       await setDoc(doc(db, 'users', auth.currentUser.uid, 'settings', 'availability'), {
         selectedDates: Array.from(selectedDates),
         dateSchedules: dateSchedules,
@@ -71,7 +115,7 @@ export default function AvailabilityPage() {
       setStep(1);
     } catch (error) {
       console.error('Error saving availability:', error);
-      alert('Error al guardar la disponibilidad');
+      alert('Error al guardar la disponibilidad: ' + (error as Error).message);
     } finally {
       setSaving(false);
     }
@@ -87,8 +131,7 @@ export default function AvailabilityPage() {
     selectedDates.forEach(date => {
       if (!newSchedules[date]) {
         newSchedules[date] = {
-          startTime: '09:00',
-          endTime: '18:00',
+          timeSlots: [{ startTime: '09:00', endTime: '18:00' }],
           slotInterval: 30,
         };
       }
@@ -97,12 +140,41 @@ export default function AvailabilityPage() {
     setStep(2);
   };
 
-  const updateDateSchedule = (date: string, field: keyof DateSchedule, value: string | number) => {
+  const addTimeSlot = (date: string) => {
     setDateSchedules(prev => ({
       ...prev,
       [date]: {
         ...prev[date],
-        [field]: value,
+        timeSlots: [...prev[date].timeSlots, { startTime: '09:00', endTime: '18:00' }],
+      },
+    }));
+  };
+
+  const removeTimeSlot = (date: string, index: number) => {
+    setDateSchedules(prev => {
+      const newTimeSlots = prev[date].timeSlots.filter((_, i) => i !== index);
+      if (newTimeSlots.length === 0) {
+        // Mantener al menos un slot
+        return prev;
+      }
+      return {
+        ...prev,
+        [date]: {
+          ...prev[date],
+          timeSlots: newTimeSlots,
+        },
+      };
+    });
+  };
+
+  const updateTimeSlot = (date: string, index: number, field: keyof TimeSlot, value: string) => {
+    setDateSchedules(prev => ({
+      ...prev,
+      [date]: {
+        ...prev[date],
+        timeSlots: prev[date].timeSlots.map((slot, i) =>
+          i === index ? { ...slot, [field]: value } : slot
+        ),
       },
     }));
   };
@@ -196,7 +268,7 @@ export default function AvailabilityPage() {
             const date = new Date(dateStr + 'T12:00:00');
             const dayName = date.toLocaleDateString('es-AR', { weekday: 'long' });
             const dateDisplay = date.toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' });
-            const schedule = dateSchedules[dateStr] || { startTime: '09:00', endTime: '18:00', slotInterval: 30 };
+            const schedule = dateSchedules[dateStr] || { timeSlots: [{ startTime: '09:00', endTime: '18:00' }], slotInterval: 30 };
 
             return (
               <div key={dateStr} className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
@@ -205,76 +277,94 @@ export default function AvailabilityPage() {
                   <p className="text-sm text-gray-500 capitalize">{dateDisplay}</p>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      Hora de inicio
-                    </label>
-                    <input
-                      type="time"
-                      value={schedule.startTime}
-                      onChange={(e) => updateDateSchedule(dateStr, 'startTime', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
-                    />
-                  </div>
+                <div className="space-y-3">
+                  {schedule.timeSlots.map((slot, index) => (
+                    <div key={index} className="flex gap-3 items-end">
+                      <div className="flex-1 grid grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                          <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            Hora de inicio
+                          </label>
+                          <input
+                            type="time"
+                            value={slot.startTime}
+                            onChange={(e) => updateTimeSlot(dateStr, index, 'startTime', e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
+                          />
+                        </div>
 
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      Hora de fin
-                    </label>
-                    <input
-                      type="time"
-                      value={schedule.endTime}
-                      onChange={(e) => updateDateSchedule(dateStr, 'endTime', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      Turnos cada
-                    </label>
-                    <select
-                      value={schedule.slotInterval}
-                      onChange={(e) => updateDateSchedule(dateStr, 'slotInterval', Number(e.target.value))}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
-                    >
-                      <option value={15}>15 minutos</option>
-                      <option value={20}>20 minutos</option>
-                      <option value={30}>30 minutos</option>
-                      <option value={45}>45 minutos</option>
-                      <option value={60}>60 minutos</option>
-                    </select>
-                  </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            Hora de fin
+                          </label>
+                          <input
+                            type="time"
+                            value={slot.endTime}
+                            onChange={(e) => updateTimeSlot(dateStr, index, 'endTime', e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
+                          />
+                        </div>
+                      </div>
+                      
+                      {schedule.timeSlots.length > 1 && (
+                        <button
+                          onClick={() => removeTimeSlot(dateStr, index)}
+                          className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Eliminar horario"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
                 </div>
+
+                <button
+                  onClick={() => addTimeSlot(dateStr)}
+                  className="mt-4 w-full px-4 py-2 border-2 border-dashed border-gray-300 text-gray-600 rounded-lg hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-colors flex items-center justify-center gap-2 font-medium"
+                >
+                  <Plus className="w-4 h-4" />
+                  Agregar otro horario
+                </button>
               </div>
             );
           })}
         </div>
 
-        <div className="flex justify-end gap-3 pt-4">
-          <button
-            onClick={() => setStep(1)}
-            className="px-6 py-2.5 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
-          >
-            Volver
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-6 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-          >
-            {saving ? (
-              <>
-                <div className="animate-spin h-4 w-4 border-2 border-white/30 border-t-white rounded-full"></div>
-                Guardando...
-              </>
-            ) : (
-              'Guardar Disponibilidad'
-            )}
-          </button>
+        <div className="bg-gradient-to-r from-blue-50 to-blue-100 border border-blue-200 rounded-lg p-6 mt-6 shadow-sm">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="text-center sm:text-left">
+              <h3 className="font-bold text-blue-900 mb-1">¿Todo listo?</h3>
+              <p className="text-sm text-blue-700">Guarda tu disponibilidad para confirmar los cambios</p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setStep(1)}
+                className="px-6 py-2.5 border border-gray-300 bg-white text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+              >
+                Volver
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="px-8 py-2.5 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-md hover:shadow-lg"
+              >
+                {saving ? (
+                  <>
+                    <div className="animate-spin h-4 w-4 border-2 border-white/30 border-t-white rounded-full"></div>
+                    Guardando...
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-5 h-5" />
+                    Guardar Disponibilidad
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     );

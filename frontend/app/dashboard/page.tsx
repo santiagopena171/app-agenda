@@ -1,13 +1,60 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Calendar, CalendarDays, Scissors, Link as LinkIcon, Copy } from 'lucide-react';
+import { auth, db } from '@/lib/firebase';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
 
 export default function DashboardPage() {
   const [copied, setCopied] = useState(false);
-  const publicLink = "http://localhost:3004/book/santirep-mkg81hg2";
+  const [publicLink, setPublicLink] = useState('');
+  const [userName, setUserName] = useState('Usuario');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        loadUserData(user.uid);
+      } else {
+        setLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const loadUserData = async (userId: string) => {
+    try {
+      const userDocRef = doc(db, 'users', userId);
+      const userDoc = await getDoc(userDocRef);
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        setUserName(userData.displayName || userData.name || 'Usuario');
+        
+        // Si no tiene publicSlug, generar uno automáticamente
+        let slug = userData.publicSlug;
+        if (!slug) {
+          slug = `${(userData.displayName || userData.name || 'usuario').toLowerCase().replace(/\s+/g, '')}-${Math.random().toString(36).substr(2, 9)}`;
+          console.log('Generando nuevo publicSlug:', slug);
+          
+          // Actualizar en Firestore
+          await updateDoc(userDocRef, { publicSlug: slug });
+          console.log('publicSlug guardado en Firestore');
+        }
+        
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+        setPublicLink(`${appUrl}/book/${slug}`);
+      }
+    } catch (error) {
+      console.error('Error loading user data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleCopy = () => {
+    if (!publicLink) return;
     navigator.clipboard.writeText(publicLink);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -17,7 +64,7 @@ export default function DashboardPage() {
     <div className="p-6 flex flex-col gap-6 pb-12">
       {/* Título Principal */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Santirep</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{userName}</h1>
         <p className="text-gray-500 text-sm mt-1">Bienvenido a tu panel de control</p>
       </div>
 
@@ -64,24 +111,35 @@ export default function DashboardPage() {
                <LinkIcon className="w-5 h-5 text-blue-500" />
                <h2 className="text-lg font-bold text-gray-900">Link Público</h2>
              </div>
-             <p className="text-sm text-gray-500">Comparte este link con s tus clientes para que reserven turnos.</p>
+             <p className="text-sm text-gray-500">Comparte este link con tus clientes para que reserven turnos.</p>
            </div>
            
-           <div className="flex flex-col gap-2">
-             <input 
-               type="text" 
-               readOnly 
-               value={publicLink} 
-               className="w-full bg-gray-50 border border-gray-200 text-gray-600 text-sm rounded px-3 py-2.5 outline-none"
-             />
-             <button 
-               onClick={handleCopy}
-               className="w-full bg-blue-500 hover:bg-blue-600 text-white font-medium py-2.5 rounded text-sm transition-colors flex items-center justify-center gap-2"
-             >
-               <Copy className="w-4 h-4" />
-               Copiar Link
-             </button>
-           </div>
+           {loading ? (
+             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
+               <p className="text-sm text-gray-600">Cargando tu link público...</p>
+             </div>
+           ) : publicLink ? (
+             <div className="flex flex-col gap-2">
+               <input 
+                 type="text" 
+                 readOnly 
+                 value={publicLink} 
+                 className="w-full bg-gray-50 border border-gray-200 text-gray-600 text-sm rounded px-3 py-2.5 outline-none select-all"
+               />
+               <button 
+                 onClick={handleCopy}
+                 className="w-full bg-blue-500 hover:bg-blue-600 text-white font-medium py-2.5 rounded text-sm transition-colors flex items-center justify-center gap-2"
+               >
+                 <Copy className="w-4 h-4" />
+                 {copied ? '¡Copiado!' : 'Copiar Link'}
+               </button>
+             </div>
+           ) : (
+             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
+               <p className="text-sm text-yellow-800 font-medium mb-2">No tienes un link público configurado</p>
+               <p className="text-xs text-yellow-700">Contacta con soporte para configurarlo</p>
+             </div>
+           )}
         </div>
 
         {/* Turnos de Hoy - Más grande */}
