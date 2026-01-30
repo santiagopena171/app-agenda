@@ -25,6 +25,19 @@ export default function AppointmentsPage() {
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
+
+  const toggleDate = (date: string) => {
+    setExpandedDates(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(date)) {
+        newSet.delete(date);
+      } else {
+        newSet.add(date);
+      }
+      return newSet;
+    });
+  };
 
   useEffect(() => {
     console.log('Setting up auth listener');
@@ -232,35 +245,80 @@ export default function AppointmentsPage() {
           No hay turnos para mostrar
         </div>
       ) : (
-        <div className="space-y-3">
-          {appointments.map((appointment) => (
-            <div key={appointment.id} className="bg-white p-4 rounded-lg shadow">
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <h3 className="font-semibold text-lg">{appointment.clientName}</h3>
-                    {getStatusBadge(appointment.status)}
+        <div className="space-y-6">
+          {Object.entries(
+            appointments.reduce((groups, appointment) => {
+              const date = appointment.date;
+              if (!groups[date]) {
+                groups[date] = [];
+              }
+              groups[date].push(appointment);
+              return groups;
+            }, {} as Record<string, Appointment[]>)
+          )
+          .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+          .map(([date, dayAppointments]) => {
+            const isExpanded = expandedDates.has(date);
+            return (
+            <div key={date} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+              <button 
+                onClick={() => toggleDate(date)}
+                className="w-full bg-gray-50 px-4 py-3 border-b border-gray-200 hover:bg-gray-100 transition-colors text-left"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold text-gray-900 capitalize">
+                      {formatDate(date)}
+                    </h3>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {dayAppointments.length} turno{dayAppointments.length !== 1 ? 's' : ''}
+                    </p>
                   </div>
-                  
-                  <div className="text-sm text-gray-600 space-y-1">
-                    <p>📅 {formatDate(appointment.date)}</p>
-                    <p>🕐 {appointment.time || appointment.startTime} {appointment.serviceDuration && appointment.time ? `- ${calculateEndTime(appointment.time, appointment.serviceDuration)}` : appointment.endTime ? `- ${appointment.endTime}` : ''}</p>
-                    <p>✂️ {appointment.serviceName}</p>
-                    <p>📱 {appointment.clientPhone}</p>
-                  </div>
-                </div>
-
-                {(appointment.status === 'confirmed' || appointment.status === 'pending') && (
-                  <button
-                    onClick={() => cancelAppointment(appointment.id)}
-                    className="text-red-600 hover:text-red-800 text-sm font-medium"
+                  <svg 
+                    className={`w-5 h-5 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
                   >
-                    Cancelar
-                  </button>
-                )}
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </button>
+              {isExpanded && (
+              <div className="divide-y divide-gray-100">
+                {dayAppointments
+                  .sort((a, b) => (a.time || a.startTime || '').localeCompare(b.time || b.startTime || ''))
+                  .map((appointment) => (
+                    <div key={appointment.id} className="p-4 hover:bg-gray-50 transition-colors">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <h4 className="font-semibold text-lg text-gray-900">{appointment.clientName}</h4>
+                            {getStatusBadge(appointment.status)}
+                          </div>
+                          
+                          <div className="text-sm text-gray-600 space-y-1">
+                            <p>🕐 {appointment.time || appointment.startTime} {appointment.serviceDuration && appointment.time ? `- ${calculateEndTime(appointment.time, appointment.serviceDuration)}` : appointment.endTime ? `- ${appointment.endTime}` : ''}</p>
+                            <p>✂️ {appointment.serviceName}</p>
+                            <p>📱 {appointment.clientPhone}</p>
+                          </div>
+                        </div>
+
+                        {(appointment.status === 'confirmed' || appointment.status === 'pending') && (
+                          <button
+                            onClick={() => cancelAppointment(appointment.id)}
+                            className="text-red-600 hover:text-red-800 text-sm font-medium ml-4"
+                          >
+                            Cancelar
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
               </div>
+              )}
             </div>
-          ))}
+          )})}
         </div>
       )}
     </div>

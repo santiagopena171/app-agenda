@@ -187,18 +187,15 @@ export default function BookingPage() {
 
   const handleServiceSelect = (service: Service) => {
     setSelectedService(service);
-    setStep(2);
   };
 
   const handleDateSelect = (date: string) => {
     setSelectedDate(date);
     setSelectedTime('');
-    setStep(3);
   };
 
   const handleTimeSelect = (time: string) => {
     setSelectedTime(time);
-    setStep(4);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -280,18 +277,22 @@ export default function BookingPage() {
           <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <Check className="w-10 h-10 text-green-600" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">¡Turno Confirmado!</h2>
-          <p className="text-gray-600 mb-6 capitalize">
-            Tu turno ha sido agendado exitosamente para el {getDateLabel(selectedDate)} a las {selectedTime}
-          </p>
-          <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
-            <p className="text-sm text-gray-600 mb-2"><strong>Servicio:</strong> {selectedService?.name}</p>
-            <p className="text-sm text-gray-600 mb-2"><strong>Duración:</strong> {selectedService?.durationMinutes} minutos</p>
-            <p className="text-sm text-gray-600"><strong>Cliente:</strong> {clientName}</p>
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Tu turno fue reservado con éxito</h2>
+          
+          <div className="bg-gray-50 rounded-lg p-4 mb-4 text-left">
+            <p className="text-sm text-gray-700 mb-2"><strong>Servicio:</strong> {selectedService?.name}</p>
+            <p className="text-sm text-gray-700 mb-2 capitalize"><strong>Fecha:</strong> {getDateLabel(selectedDate)}</p>
+            <p className="text-sm text-gray-700"><strong>Hora:</strong> {selectedTime}</p>
           </div>
+
+          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 mb-6">
+            <p className="text-sm text-indigo-900 mb-1">✓ El local ya fue notificado</p>
+            <p className="text-sm text-indigo-700">No es necesario crear una cuenta</p>
+          </div>
+
           <button
             onClick={() => window.location.reload()}
-            className="px-6 py-3 rounded-lg font-semibold transition-colors"
+            className="w-full px-6 py-3 rounded-lg font-semibold transition-colors"
             style={{ backgroundColor: '#4F46E5', color: 'white' }}
           >
             Agendar otro turno
@@ -341,36 +342,54 @@ export default function BookingPage() {
         {/* Step 1: Select Service */}
         {step === 1 && (
           <div className="bg-white rounded-2xl shadow-xl p-6">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">Selecciona un servicio</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-6">Seleccioná un servicio</h2>
             {services.length === 0 ? (
               <p className="text-gray-600">No hay servicios disponibles en este momento.</p>
             ) : (
-              <div className="grid gap-4">
-                {services.map(service => (
+              <>
+                <div className="grid gap-4 mb-6">
+                  {services.map(service => (
+                    <button
+                      key={service.id}
+                      onClick={() => handleServiceSelect(service)}
+                      className={`p-5 border-2 rounded-xl transition-all text-left ${
+                        selectedService?.id === service.id
+                          ? 'border-indigo-600 bg-indigo-50'
+                          : 'border-gray-200 hover:border-indigo-500 hover:bg-indigo-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className={`font-bold text-lg ${
+                            selectedService?.id === service.id ? 'text-indigo-600' : 'text-gray-900'
+                          }`}>
+                            {service.name}
+                          </h3>
+                          <p className="text-gray-600 flex items-center gap-2 mt-1">
+                            <Clock className="w-4 h-4" />
+                            {service.durationMinutes} minutos
+                          </p>
+                        </div>
+                        {selectedService?.id === service.id && (
+                          <div className="text-indigo-600">
+                            <Check className="w-6 h-6" />
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                <div className="flex justify-end">
                   <button
-                    key={service.id}
-                    onClick={() => handleServiceSelect(service)}
-                    className="p-5 border-2 border-gray-200 rounded-xl hover:border-indigo-500 hover:bg-indigo-50 transition-all text-left group"
+                    onClick={() => setStep(2)}
+                    disabled={!selectedService}
+                    className="px-6 py-3 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{ backgroundColor: selectedService ? '#4F46E5' : '#D1D5DB', color: 'white' }}
                   >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h3 className="font-bold text-lg text-gray-900 group-hover:text-indigo-600">
-                          {service.name}
-                        </h3>
-                        <p className="text-gray-600 flex items-center gap-2 mt-1">
-                          <Clock className="w-4 h-4" />
-                          {service.durationMinutes} minutos
-                        </p>
-                      </div>
-                      <div className="text-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path>
-                        </svg>
-                      </div>
-                    </div>
+                    Continuar
                   </button>
-                ))}
-              </div>
+                </div>
+              </>
             )}
           </div>
         )}
@@ -379,34 +398,57 @@ export default function BookingPage() {
         {step === 2 && selectedService && (
           <div className="bg-white rounded-2xl shadow-xl p-6">
             <button
-              onClick={() => setStep(1)}
+              onClick={() => { setStep(1); setSelectedDate(''); }}
               className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-4"
             >
               <ArrowLeft className="w-4 h-4" />
               Volver
             </button>
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Selecciona una fecha</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Seleccioná una fecha</h2>
             <p className="text-gray-600 mb-6">Servicio: <strong>{selectedService.name}</strong></p>
             
             {getAvailableFutureDates().length === 0 ? (
               <p className="text-gray-600">No hay fechas disponibles.</p>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto">
-                {getAvailableFutureDates().map(date => (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto mb-6">
+                  {getAvailableFutureDates().map(date => (
+                    <button
+                      key={date}
+                      onClick={() => handleDateSelect(date)}
+                      className={`p-4 border-2 rounded-xl transition-all text-left ${
+                        selectedDate === date
+                          ? 'border-indigo-600 bg-indigo-50'
+                          : 'border-gray-200 hover:border-indigo-500 hover:bg-indigo-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <Calendar className="w-5 h-5 text-indigo-600" />
+                          <span className={`font-semibold capitalize ${
+                            selectedDate === date ? 'text-indigo-600' : 'text-gray-900'
+                          }`}>
+                            {getDateLabel(date)}
+                          </span>
+                        </div>
+                        {selectedDate === date && (
+                          <Check className="w-5 h-5 text-indigo-600" />
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                <div className="flex justify-end">
                   <button
-                    key={date}
-                    onClick={() => handleDateSelect(date)}
-                    className="p-4 border-2 border-gray-200 rounded-xl hover:border-indigo-500 hover:bg-indigo-50 transition-all text-left group"
+                    onClick={() => setStep(3)}
+                    disabled={!selectedDate}
+                    className="px-6 py-3 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{ backgroundColor: selectedDate ? '#4F46E5' : '#D1D5DB', color: 'white' }}
                   >
-                    <div className="flex items-center gap-3">
-                      <Calendar className="w-5 h-5 text-indigo-600" />
-                      <span className="font-semibold text-gray-900 capitalize">
-                        {getDateLabel(date)}
-                      </span>
-                    </div>
+                    Continuar
                   </button>
-                ))}
-              </div>
+                </div>
+              </>
             )}
           </div>
         )}
@@ -415,29 +457,45 @@ export default function BookingPage() {
         {step === 3 && selectedDate && (
           <div className="bg-white rounded-2xl shadow-xl p-6">
             <button
-              onClick={() => setStep(2)}
+              onClick={() => { setStep(2); setSelectedTime(''); }}
               className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-4"
             >
               <ArrowLeft className="w-4 h-4" />
               Volver
             </button>
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Selecciona un horario</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Seleccioná un horario</h2>
             <p className="text-gray-600 mb-6 capitalize">{getDateLabel(selectedDate)}</p>
             
             {availableTimeSlots.length === 0 ? (
               <p className="text-gray-600">No hay horarios disponibles para esta fecha.</p>
             ) : (
-              <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                {availableTimeSlots.map(time => (
+              <>
+                <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 mb-6">
+                  {availableTimeSlots.map(time => (
+                    <button
+                      key={time}
+                      onClick={() => handleTimeSelect(time)}
+                      className={`p-3 border-2 rounded-lg transition-all text-center font-semibold ${
+                        selectedTime === time
+                          ? 'border-indigo-600 bg-indigo-600 text-white'
+                          : 'border-gray-200 hover:border-indigo-500 hover:bg-indigo-50 text-gray-900 hover:text-indigo-600'
+                      }`}
+                    >
+                      {time}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex justify-end">
                   <button
-                    key={time}
-                    onClick={() => handleTimeSelect(time)}
-                    className="p-3 border-2 border-gray-200 rounded-lg hover:border-indigo-500 hover:bg-indigo-50 transition-all text-center font-semibold text-gray-900 hover:text-indigo-600"
+                    onClick={() => setStep(4)}
+                    disabled={!selectedTime}
+                    className="px-6 py-3 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{ backgroundColor: selectedTime ? '#4F46E5' : '#D1D5DB', color: 'white' }}
                   >
-                    {time}
+                    Continuar
                   </button>
-                ))}
-              </div>
+                </div>
+              </>
             )}
           </div>
         )}
@@ -452,7 +510,7 @@ export default function BookingPage() {
               <ArrowLeft className="w-4 h-4" />
               Volver
             </button>
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">Completa tus datos</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-6">Completá tus datos</h2>
             
             <div className="bg-indigo-50 rounded-lg p-4 mb-6">
               <h3 className="font-semibold text-gray-900 mb-2">Resumen del turno:</h3>
